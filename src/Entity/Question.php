@@ -24,16 +24,9 @@ class Question
         minMessage: 'La question doit contenir au moins {{ limit }} caractères.',
         maxMessage: 'La question ne peut pas dépasser {{ limit }} caractères.'
     )]
+    #[Assert\NoSuspiciousCharacters()]
     #[Assert\Regex(
-        pattern: '/^[^<>{}"\\\\\[\]`]*$/',
-        message: 'La question contient des caractères non autorisés.'
-    )]
-    #[Assert\Regex(
-        pattern: '/^(?!.*(javascript:|data:|vbscript:|onload=|onerror=|onclick=|onmouseover=)).*$/i',
-        message: 'La question contient du contenu potentiellement dangereux.'
-    )]
-    #[Assert\Regex(
-        pattern: '/^.+\?$/',
+        pattern: '/\?$/',
         message: 'Une question doit se terminer par un point d\'interrogation.'
     )]
     private ?string $texte = null;
@@ -44,9 +37,7 @@ class Question
         type: 'integer',
         message: 'Le numéro d\'ordre doit être un nombre entier.'
     )]
-    #[Assert\Positive(
-        message: 'Le numéro d\'ordre doit être un nombre positif.'
-    )]
+    #[Assert\Positive(message: 'Le numéro d\'ordre doit être un nombre positif.')]
     #[Assert\Range(
         min: 1,
         max: 100,
@@ -57,12 +48,19 @@ class Question
     #[ORM\ManyToOne(inversedBy: 'questions')]
     #[ORM\JoinColumn(nullable: false)]
     #[Assert\NotNull(message: 'Le questionnaire associé est obligatoire.')]
+    #[Assert\Valid]
     private ?Questionnaire $questionnaire = null;
 
-    #[ORM\OneToMany(mappedBy: 'question', targetEntity: Reponse::class, orphanRemoval: true)]
+    #[ORM\OneToMany(mappedBy: 'question', targetEntity: Reponse::class, orphanRemoval: true, cascade: ['persist', 'remove'])]
+    #[Assert\Valid]
+    #[Assert\Count(
+        min: 2,
+        minMessage: 'Une question doit avoir au moins {{ limit }} réponses.'
+    )]
     private Collection $reponses;
 
-    #[ORM\OneToMany(mappedBy: 'question', targetEntity: ReponseUtilisateur::class, orphanRemoval: true)]
+    #[ORM\OneToMany(mappedBy: 'question', targetEntity: ReponseUtilisateur::class, orphanRemoval: true, cascade: ['persist', 'remove'])]
+    #[Assert\Valid]
     private Collection $reponsesUtilisateur;
 
     public function __construct()
@@ -81,19 +79,23 @@ class Question
         return $this->texte;
     }
 
-    public function setTexte(string $texte): static
+    public function setTexte(?string $texte): static
     {
-        // Nettoyer et sécuriser le texte
-        $cleanTexte = trim($texte);
+        if ($texte !== null) {
+            // Nettoyage simple et sécurisé
+            $texte = trim($texte);
 
-        // Supprimer les caractères de contrôle dangereux
-        $cleanTexte = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $cleanTexte);
+            // Supprime les caractères de contrôle dangereux
+            $texte = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/', '', $texte);
 
-        // Encoder les entités HTML pour éviter les injections XSS
-        $cleanTexte = htmlspecialchars($cleanTexte, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+            // Supprime les balises script/iframe dangereuses
+            $texte = preg_replace('/<(script|iframe)[^>]*>.*?<\/\1>/is', '', $texte);
 
-        $this->texte = $cleanTexte;
+            // Si vide après nettoyage, on met null
+            $texte = $texte !== '' ? $texte : null;
+        }
 
+        $this->texte = $texte;
         return $this;
     }
 
@@ -102,17 +104,14 @@ class Question
         return $this->numeroOrdre;
     }
 
-    public function setNumeroOrdre(int $numeroOrdre): static
+    public function setNumeroOrdre(?int $numeroOrdre): static
     {
-        // Valider et sécuriser le numéro d'ordre
-        if ($numeroOrdre < 1) {
-            $numeroOrdre = 1;
-        } elseif ($numeroOrdre > 100) {
-            $numeroOrdre = 100;
+        // Validation simple des limites
+        if ($numeroOrdre !== null) {
+            $numeroOrdre = max(1, min(100, $numeroOrdre));
         }
 
         $this->numeroOrdre = $numeroOrdre;
-
         return $this;
     }
 
@@ -124,7 +123,6 @@ class Question
     public function setQuestionnaire(?Questionnaire $questionnaire): static
     {
         $this->questionnaire = $questionnaire;
-
         return $this;
     }
 
@@ -149,7 +147,6 @@ class Question
     public function removeReponse(Reponse $reponse): static
     {
         if ($this->reponses->removeElement($reponse)) {
-            // set the owning side to null (unless already changed)
             if ($reponse->getQuestion() === $this) {
                 $reponse->setQuestion(null);
             }
@@ -179,7 +176,6 @@ class Question
     public function removeReponseUtilisateur(ReponseUtilisateur $reponseUtilisateur): static
     {
         if ($this->reponsesUtilisateur->removeElement($reponseUtilisateur)) {
-            // set the owning side to null (unless already changed)
             if ($reponseUtilisateur->getQuestion() === $this) {
                 $reponseUtilisateur->setQuestion(null);
             }
@@ -228,13 +224,38 @@ class Question
     /**
      * Vérifie si la question est valide (a au moins 2 réponses et au moins une correcte)
      */
+    #[Assert\IsTrue(message: 'Une question doit avoir au moins une réponse correcte.')]
     public function isValid(): bool
     {
-        return $this->getAnswersCount() >= 2 && $this->hasCorrectAnswer();
+        return $this->hasCorrectAnswer();
+    }
+
+    /**
+     * Détermine si la question est à choix multiple (plusieurs réponses correctes) ou unique (une seule réponse correcte)
+     */
+    public function isMultipleChoice(): bool
+    {
+        $correctAnswersCount = 0;
+        foreach ($this->reponses as $reponse) {
+            if ($reponse->isCorrect()) {
+                $correctAnswersCount++;
+            }
+        }
+        return $correctAnswersCount > 1;
+    }
+
+    /**
+     * Retourne le type de question sous forme de texte
+     */
+    public function getQuestionType(): string
+    {
+        return $this->isMultipleChoice() ? 'multiple' : 'single';
     }
 
     /**
      * Récupère toutes les réponses correctes
+     * 
+     * @return Reponse[]
      */
     public function getCorrectAnswers(): array
     {
@@ -250,11 +271,13 @@ class Question
 
     /**
      * Récupère les réponses ordonnées par numéro d'ordre
+     * 
+     * @return Reponse[]
      */
     public function getAnswersOrderedByNumber(): array
     {
         $reponses = $this->reponses->toArray();
-        usort($reponses, function ($a, $b) {
+        usort($reponses, function (Reponse $a, Reponse $b): int {
             return $a->getNumeroOrdre() <=> $b->getNumeroOrdre();
         });
 

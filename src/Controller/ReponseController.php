@@ -4,6 +4,7 @@ namespace App\Controller;
 
 use App\Entity\Reponse;
 use App\Entity\Question;
+use App\Repository\ReponseRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -18,7 +19,8 @@ class ReponseController extends AbstractController
 {
     public function __construct(
         private EntityManagerInterface $entityManager,
-        private ValidatorInterface $validator
+        private ValidatorInterface $validator,
+        private ReponseRepository $reponseRepository
     ) {
     }
 
@@ -27,28 +29,13 @@ class ReponseController extends AbstractController
     #[IsGranted('ROLE_USER')]
     public function getCollection(Request $request): JsonResponse
     {
-        $questionId = $request->query->get('question');
+        $questionId = $request->query->get('question') ? (int) $request->query->get('question') : null;
 
-        $queryBuilder = $this->entityManager->getRepository(Reponse::class)
-            ->createQueryBuilder('r')
-            ->leftJoin('r.question', 'q')
-            ->leftJoin('q.questionnaire', 'qt');
-
-        // Filtrer par question si spécifié
-        if ($questionId) {
-            $queryBuilder->where('q.id = :questionId')
-                ->setParameter('questionId', $questionId);
-        }
-
-        // Si l'utilisateur n'est pas admin, ne voir que les réponses de ses questionnaires
-        if (!$this->isGranted('ROLE_ADMIN')) {
-            $queryBuilder->andWhere('qt.creePar = :user')
-                ->setParameter('user', $this->getUser());
-        }
-
-        $reponses = $queryBuilder->orderBy('r.numeroOrdre', 'ASC')
-            ->getQuery()
-            ->getResult();
+        $reponses = $this->reponseRepository->findWithFilters(
+            $questionId,
+            $this->getUser(),
+            $this->isGranted('ROLE_ADMIN')
+        );
 
         $data = [];
         foreach ($reponses as $reponse) {
@@ -123,15 +110,7 @@ class ReponseController extends AbstractController
         if (isset($data['numeroOrdre'])) {
             $reponse->setNumeroOrdre($data['numeroOrdre']);
         } else {
-
-            $maxOrder = $this->entityManager->getRepository(Reponse::class)
-                ->createQueryBuilder('r')
-                ->select('MAX(r.numeroOrdre)')
-                ->where('r.question = :question')
-                ->setParameter('question', $question)
-                ->getQuery()
-                ->getSingleScalarResult();
-
+            $maxOrder = $this->reponseRepository->findMaxOrderByQuestion($question);
             $reponse->setNumeroOrdre(($maxOrder ?? 0) + 1);
         }
 

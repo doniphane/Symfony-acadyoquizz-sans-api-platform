@@ -4,6 +4,7 @@ namespace App\Controller;
 
 use App\Entity\TentativeQuestionnaire;
 use App\Entity\Questionnaire;
+use App\Repository\TentativeQuestionnaireRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -18,7 +19,8 @@ class TentativeQuestionnaireController extends AbstractController
 {
     public function __construct(
         private EntityManagerInterface $entityManager,
-        private ValidatorInterface $validator
+        private ValidatorInterface $validator,
+        private TentativeQuestionnaireRepository $tentativeRepository
     ) {
     }
 
@@ -30,25 +32,12 @@ class TentativeQuestionnaireController extends AbstractController
     public function getCollection(Request $request): JsonResponse
     {
         $questionnaireId = $request->query->get('questionnaire');
-
-        $queryBuilder = $this->entityManager->getRepository(TentativeQuestionnaire::class)
-            ->createQueryBuilder('t')
-            ->leftJoin('t.questionnaire', 'q')
-            ->leftJoin('t.utilisateur', 'u');
-
-        // Filtrer par questionnaire si spécifié
-        if ($questionnaireId) {
-            $queryBuilder->where('q.id = :questionnaireId')
-                ->setParameter('questionnaireId', $questionnaireId);
-        }
-
-        // Si l'utilisateur n'est pas admin, ne voir que ses propres questionnaires
-        if (!$this->isGranted('ROLE_ADMIN')) {
-            $queryBuilder->andWhere('q.creePar = :user')
-                ->setParameter('user', $this->getUser());
-        }
-
-        $tentatives = $queryBuilder->getQuery()->getResult();
+        
+        $tentatives = $this->tentativeRepository->findWithFiltersAndUser(
+            $questionnaireId ? (int) $questionnaireId : null,
+            $this->getUser(),
+            $this->isGranted('ROLE_ADMIN')
+        );
 
         $data = [];
         foreach ($tentatives as $tentative) {
@@ -65,9 +54,9 @@ class TentativeQuestionnaireController extends AbstractController
     #[IsGranted('ROLE_USER')]
     public function getItem(int $id): JsonResponse
     {
-        $tentative = $this->entityManager->getRepository(TentativeQuestionnaire::class)->find($id);
+        $tentative = $this->tentativeRepository->find($id);
 
-        if (!tentative) {
+        if (!$tentative) {
             return new JsonResponse(['error' => 'Tentative non trouvée'], Response::HTTP_NOT_FOUND);
         }
 
@@ -155,9 +144,9 @@ class TentativeQuestionnaireController extends AbstractController
     #[IsGranted('ROLE_USER')]
     public function put(int $id, Request $request): JsonResponse
     {
-        $tentative = $this->entityManager->getRepository(TentativeQuestionnaire::class)->find($id);
+        $tentative = $this->tentativeRepository->find($id);
 
-        if (!tentative) {
+        if (!$tentative) {
             return new JsonResponse(['error' => 'Tentative non trouvée'], Response::HTTP_NOT_FOUND);
         }
 
@@ -214,9 +203,9 @@ class TentativeQuestionnaireController extends AbstractController
     #[IsGranted('ROLE_ADMIN')]
     public function delete(int $id): JsonResponse
     {
-        $tentative = $this->entityManager->getRepository(TentativeQuestionnaire::class)->find($id);
+        $tentative = $this->tentativeRepository->find($id);
 
-        if (!tentative) {
+        if (!$tentative) {
             return new JsonResponse(['error' => 'Tentative non trouvée'], Response::HTTP_NOT_FOUND);
         }
 

@@ -75,4 +75,44 @@ class ReponseRepository extends ServiceEntityRepository
             ->getQuery()
             ->getResult();
     }
+
+    /**
+     * Trouve les réponses avec filtres pour question et utilisateur (pour admin/non-admin)
+     */
+    public function findWithFilters(?int $questionId = null, $user = null, bool $isAdmin = false): array
+    {
+        $queryBuilder = $this->createQueryBuilder('r')
+            ->leftJoin('r.question', 'q')
+            ->leftJoin('q.questionnaire', 'qt');
+
+        if ($questionId) {
+            $queryBuilder->where('q.id = :questionId')
+                ->setParameter('questionId', $questionId);
+        }
+
+        // Si l'utilisateur n'est pas admin, ne voir que les réponses de ses questionnaires
+        if (!$isAdmin && $user) {
+            $queryBuilder->andWhere('qt.creePar = :user')
+                ->setParameter('user', $user);
+        }
+
+        return $queryBuilder->orderBy('r.numeroOrdre', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Trouve le numéro d'ordre maximum pour une question donnée
+     */
+    public function findMaxOrderByQuestion($question): ?int
+    {
+        $result = $this->createQueryBuilder('r')
+            ->select('MAX(r.numeroOrdre)')
+            ->where('r.question = :question')
+            ->setParameter('question', $question)
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        return $result ? (int) $result : null;
+    }
 }

@@ -5,7 +5,8 @@ namespace App\Controller;
 use App\Entity\TentativeQuestionnaire;
 use App\Entity\Question;
 use App\Entity\ReponseUtilisateur;
-use Doctrine\ORM\EntityManagerInterface;
+use App\Repository\TentativeQuestionnaireRepository;
+use App\Repository\ReponseUtilisateurRepository;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
@@ -16,7 +17,8 @@ use Symfony\Component\Security\Http\Attribute\IsGranted;
 class UserAttemptsController extends AbstractController
 {
     public function __construct(
-        private EntityManagerInterface $entityManager
+        private TentativeQuestionnaireRepository $tentativeQuestionnaireRepository,
+        private ReponseUtilisateurRepository $reponseUtilisateurRepository
     ) {
     }
 
@@ -26,14 +28,7 @@ class UserAttemptsController extends AbstractController
     {
         $user = $this->getUser();
 
-        $attempts = $this->entityManager->getRepository(TentativeQuestionnaire::class)
-            ->createQueryBuilder('t')
-            ->leftJoin('t.questionnaire', 'q')
-            ->where('t.utilisateur = :user')
-            ->setParameter('user', $user)
-            ->orderBy('t.dateDebut', 'DESC')
-            ->getQuery()
-            ->getResult();
+        $attempts = $this->tentativeQuestionnaireRepository->findByUserWithQuestionnaire($user);
 
         $data = [];
         foreach ($attempts as $attempt) {
@@ -47,26 +42,13 @@ class UserAttemptsController extends AbstractController
     #[IsGranted('ROLE_USER')]
     public function getMyAttemptDetails(int $id): JsonResponse
     {
-        $attempt = $this->entityManager->getRepository(TentativeQuestionnaire::class)->find($id);
+        $attempt = $this->tentativeQuestionnaireRepository->findOneByIdAndUser($id, $this->getUser());
 
         if (!$attempt) {
-            return new JsonResponse(['error' => 'Tentative non trouvée'], Response::HTTP_NOT_FOUND);
+            return new JsonResponse(['error' => 'Tentative non trouvée ou accès refusé'], Response::HTTP_NOT_FOUND);
         }
 
-        // Vérifier que la tentative appartient à l'utilisateur connecté
-        if ($attempt->getUtilisateur() !== $this->getUser()) {
-            return new JsonResponse(['error' => 'Accès refusé'], Response::HTTP_FORBIDDEN);
-        }
-
-        $reponsesUtilisateur = $this->entityManager->getRepository(ReponseUtilisateur::class)
-            ->createQueryBuilder('ru')
-            ->leftJoin('ru.question', 'qu')
-            ->leftJoin('ru.reponse', 'r')
-            ->where('ru.tentativeQuestionnaire = :attempt')
-            ->setParameter('attempt', $attempt)
-            ->orderBy('qu.numeroOrdre', 'ASC')
-            ->getQuery()
-            ->getResult();
+        $reponsesUtilisateur = $this->reponseUtilisateurRepository->findByTentativeWithDetailsOrderedByQuestionOrder($attempt);
 
         $details = [];
         foreach ($reponsesUtilisateur as $ru) {

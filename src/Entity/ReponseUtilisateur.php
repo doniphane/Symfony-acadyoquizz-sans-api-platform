@@ -2,12 +2,6 @@
 
 namespace App\Entity;
 
-use ApiPlatform\Metadata\ApiResource;
-use ApiPlatform\Metadata\Get;
-use ApiPlatform\Metadata\GetCollection;
-use ApiPlatform\Metadata\Post;
-use ApiPlatform\Metadata\Put;
-use ApiPlatform\Metadata\Delete;
 use App\Repository\ReponseUtilisateurRepository;
 use Doctrine\ORM\Mapping as ORM;
 use Symfony\Component\Serializer\Annotation\Groups;
@@ -18,17 +12,6 @@ use Symfony\Bridge\Doctrine\Validator\Constraints\UniqueEntity;
 #[UniqueEntity(
     fields: ['tentativeQuestionnaire', 'question'],
     message: 'Une réponse a déjà été donnée à cette question pour cette tentative.'
-)]
-#[ApiResource(
-    operations: [
-        new Get(),
-        new GetCollection(),
-        new Post(),
-        new Put(),
-        new Delete()
-    ],
-    normalizationContext: ['groups' => ['reponse_utilisateur:read']],
-    denormalizationContext: ['groups' => ['reponse_utilisateur:write']]
 )]
 class ReponseUtilisateur
 {

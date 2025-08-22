@@ -130,41 +130,51 @@ class PublicQuestionnaireController extends AbstractController
         $score = 0;
         $totalQuestions = 0;
 
-        // Traiter chaque réponse ouf
+        // Grouper les réponses par question pour gérer les choix multiples
+        $reponsesByQuestion = [];
         foreach ($data['reponses'] as $reponseData) {
             if (!isset($reponseData['questionId']) || !isset($reponseData['reponseId'])) {
                 continue;
             }
+            $questionId = (int) $reponseData['questionId'];
+            if (!isset($reponsesByQuestion[$questionId])) {
+                $reponsesByQuestion[$questionId] = [];
+            }
+            $reponsesByQuestion[$questionId][] = (int) $reponseData['reponseId'];
+        }
 
-            $question = $this->entityManager->getRepository(Question::class)->find($reponseData['questionId']);
+        // Traiter chaque question
+        foreach ($reponsesByQuestion as $questionId => $selectedAnswerIds) {
+            $question = $this->entityManager->getRepository(Question::class)->find($questionId);
             if (!$question || $question->getQuestionnaire() !== $questionnaire) {
                 continue;
             }
 
-            $reponseUtilisateur = new ReponseUtilisateur();
-            $reponseUtilisateur->setTentativeQuestionnaire($tentative);
-            $reponseUtilisateur->setQuestion($question);
+            $totalQuestions++;
 
-            // Trouver la réponse sélectionnée puf 
-            $reponseSelectionnee = null;
-            foreach ($question->getReponses() as $reponse) {
-                if ($reponse->getId() === (int) $reponseData['reponseId']) {
-                    $reponseSelectionnee = $reponse;
-                    $reponseUtilisateur->setReponse($reponse);
-                    if ($reponse->isCorrect()) {
-                        $score++;
+            // Créer les réponses utilisateur
+            foreach ($selectedAnswerIds as $answerId) {
+                $reponseSelectionnee = null;
+                foreach ($question->getReponses() as $reponse) {
+                    if ($reponse->getId() === $answerId) {
+                        $reponseSelectionnee = $reponse;
+                        break;
                     }
-                    break;
+                }
+
+                if ($reponseSelectionnee) {
+                    $reponseUtilisateur = new ReponseUtilisateur();
+                    $reponseUtilisateur->setTentativeQuestionnaire($tentative);
+                    $reponseUtilisateur->setQuestion($question);
+                    $reponseUtilisateur->setReponse($reponseSelectionnee);
+                    $this->entityManager->persist($reponseUtilisateur);
                 }
             }
 
-            // Si aucune réponse valide trouvée, passer à la suivante
-            if (!$reponseSelectionnee) {
-                continue;
+            // Calculer le score pour cette question
+            if ($this->isQuestionAnsweredCorrectly($question, $selectedAnswerIds)) {
+                $score++;
             }
-
-            $this->entityManager->persist($reponseUtilisateur);
-            $totalQuestions++;
         }
 
         // Calculer le score final
@@ -201,20 +211,55 @@ class PublicQuestionnaireController extends AbstractController
         $reponsesUtilisateur = $this->entityManager->getRepository(ReponseUtilisateur::class)
             ->findBy(['tentativeQuestionnaire' => $tentative]);
 
-        $resultats = [];
+        // Grouper les réponses par question pour gérer les choix multiples
+        $reponsesByQuestion = [];
         foreach ($reponsesUtilisateur as $reponseUtilisateur) {
-            $question = $reponseUtilisateur->getQuestion();
-            $reponseSelectionnee = $reponseUtilisateur->getReponse();
+            $questionId = $reponseUtilisateur->getQuestion()->getId();
+            if (!isset($reponsesByQuestion[$questionId])) {
+                $reponsesByQuestion[$questionId] = [
+                    'question' => $reponseUtilisateur->getQuestion(),
+                    'reponses' => []
+                ];
+            }
+            $reponsesByQuestion[$questionId]['reponses'][] = $reponseUtilisateur->getReponse();
+        }
+
+        $resultats = [];
+        foreach ($reponsesByQuestion as $data) {
+            $question = $data['question'];
+            $reponsesSelectionnees = $data['reponses'];
+
+            // Sérialiser les réponses sélectionnées
+            $reponsesSelectionneesSerialized = [];
+            foreach ($reponsesSelectionnees as $reponse) {
+                $reponsesSelectionneesSerialized[] = [
+                    'id' => $reponse->getId(),
+                    'texte' => $reponse->getTexte(),
+                    'estCorrecte' => $reponse->isCorrect()
+                ];
+            }
+
+            // Récupérer toutes les bonnes réponses
+            $bonnesReponses = [];
+            foreach ($question->getCorrectAnswers() as $reponse) {
+                $bonnesReponses[] = [
+                    'id' => $reponse->getId(),
+                    'texte' => $reponse->getTexte(),
+                    'estCorrecte' => true
+                ];
+            }
+
+            // Calculer si l'utilisateur a bien répondu à cette question
+            $selectedIds = array_map(fn($r) => $r->getId(), $reponsesSelectionnees);
+            $isCorrect = $this->isQuestionAnsweredCorrectly($question, $selectedIds);
 
             $resultats[] = [
                 'questionId' => $question->getId(),
                 'questionTexte' => $question->getTexte(),
-                'reponseSelectionnee' => [
-                    'id' => $reponseSelectionnee->getId(),
-                    'texte' => $reponseSelectionnee->getTexte(),
-                    'estCorrecte' => $reponseSelectionnee->isCorrect()
-                ],
-                'bonneReponse' => $this->getCorrectAnswerForQuestion($question)
+                'isMultipleChoice' => $question->isMultipleChoice(),
+                'reponsesSelectionnees' => $reponsesSelectionneesSerialized,
+                'bonnesReponses' => $bonnesReponses,
+                'estCorrecte' => $isCorrect
             ];
         }
 
@@ -265,6 +310,7 @@ class PublicQuestionnaireController extends AbstractController
                     'id' => $question->getId(),
                     'texte' => $question->getTexte(),
                     'numeroOrdre' => $question->getNumeroOrdre(),
+                    'isMultipleChoice' => $question->isMultipleChoice(),
                     'reponses' => $reponses
                 ];
             }
@@ -292,5 +338,37 @@ class PublicQuestionnaireController extends AbstractController
         }
 
         return null;
+    }
+
+    /**
+     * Vérifie si une question est répondue correctement
+     * Pour les questions à choix multiple, toutes les bonnes réponses doivent être sélectionnées
+     * et aucune mauvaise réponse ne doit être sélectionnée
+     */
+    private function isQuestionAnsweredCorrectly(Question $question, array $selectedAnswerIds): bool
+    {
+        // Récupérer tous les IDs des bonnes réponses
+        $correctAnswerIds = [];
+        foreach ($question->getReponses() as $reponse) {
+            if ($reponse->isCorrect()) {
+                $correctAnswerIds[] = $reponse->getId();
+            }
+        }
+
+        // Vérifier que toutes les bonnes réponses sont sélectionnées
+        foreach ($correctAnswerIds as $correctId) {
+            if (!in_array($correctId, $selectedAnswerIds)) {
+                return false; // Une bonne réponse manquante
+            }
+        }
+
+        // Vérifier qu'aucune mauvaise réponse n'est sélectionnée
+        foreach ($selectedAnswerIds as $selectedId) {
+            if (!in_array($selectedId, $correctAnswerIds)) {
+                return false; // Une mauvaise réponse sélectionnée
+            }
+        }
+
+        return true; // Toutes les bonnes réponses sélectionnées, aucune mauvaise
     }
 }

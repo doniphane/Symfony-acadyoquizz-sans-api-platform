@@ -6,6 +6,7 @@ use App\Entity\ReponseUtilisateur;
 use App\Entity\TentativeQuestionnaire;
 use App\Entity\Question;
 use App\Entity\Reponse;
+use App\Repository\ReponseUtilisateurRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -20,7 +21,8 @@ class ReponseUtilisateurController extends AbstractController
 {
     public function __construct(
         private EntityManagerInterface $entityManager,
-        private ValidatorInterface $validator
+        private ValidatorInterface $validator,
+        private ReponseUtilisateurRepository $reponseUtilisateurRepository
     ) {
     }
 
@@ -31,37 +33,15 @@ class ReponseUtilisateurController extends AbstractController
     #[IsGranted('ROLE_USER')]
     public function getCollection(Request $request): JsonResponse
     {
-        $tentativeId = $request->query->get('tentative');
-        $questionId = $request->query->get('question');
+        $tentativeId = $request->query->get('tentative') ? (int) $request->query->get('tentative') : null;
+        $questionId = $request->query->get('question') ? (int) $request->query->get('question') : null;
 
-        $queryBuilder = $this->entityManager->getRepository(ReponseUtilisateur::class)
-            ->createQueryBuilder('ru')
-            ->leftJoin('ru.tentativeQuestionnaire', 't')
-            ->leftJoin('t.questionnaire', 'q')
-            ->leftJoin('ru.question', 'qu')
-            ->leftJoin('ru.reponse', 'r');
-
-
-        if ($tentativeId) {
-            $queryBuilder->andWhere('t.id = :tentativeId')
-                ->setParameter('tentativeId', $tentativeId);
-        }
-
-
-        if ($questionId) {
-            $queryBuilder->andWhere('qu.id = :questionId')
-                ->setParameter('questionId', $questionId);
-        }
-
-        // Si l'utilisateur n'est pas admin, ne voir que les réponses de ses questionnaires
-        if (!$this->isGranted('ROLE_ADMIN')) {
-            $queryBuilder->andWhere('q.creePar = :user')
-                ->setParameter('user', $this->getUser());
-        }
-
-        $reponsesUtilisateur = $queryBuilder->orderBy('ru.dateReponse', 'ASC')
-            ->getQuery()
-            ->getResult();
+        $reponsesUtilisateur = $this->reponseUtilisateurRepository->findWithFilters(
+            $tentativeId,
+            $questionId,
+            $this->getUser(),
+            $this->isGranted('ROLE_ADMIN')
+        );
 
         $data = [];
         foreach ($reponsesUtilisateur as $reponseUtilisateur) {
@@ -78,18 +58,14 @@ class ReponseUtilisateurController extends AbstractController
     #[IsGranted('ROLE_USER')]
     public function getItem(int $id): JsonResponse
     {
-        $reponseUtilisateur = $this->entityManager->getRepository(ReponseUtilisateur::class)->find($id);
+        $reponseUtilisateur = $this->reponseUtilisateurRepository->findOneWithAccessCheck(
+            $id,
+            $this->getUser(),
+            $this->isGranted('ROLE_ADMIN')
+        );
 
         if (!$reponseUtilisateur) {
-            return new JsonResponse(['error' => 'Réponse utilisateur non trouvée'], Response::HTTP_NOT_FOUND);
-        }
-
-        // Vérifier que l'utilisateur a accès à cette réponse
-        if (
-            !$this->isGranted('ROLE_ADMIN') &&
-            $reponseUtilisateur->getTentativeQuestionnaire()->getQuestionnaire()->getCreePar() !== $this->getUser()
-        ) {
-            return new JsonResponse(['error' => 'Accès refusé'], Response::HTTP_FORBIDDEN);
+            return new JsonResponse(['error' => 'Réponse utilisateur non trouvée ou accès refusé'], Response::HTTP_NOT_FOUND);
         }
 
         return new JsonResponse($this->serializeReponseUtilisateur($reponseUtilisateur, true));

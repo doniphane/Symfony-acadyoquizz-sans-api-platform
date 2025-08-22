@@ -5,6 +5,7 @@ namespace App\Controller;
 use App\Entity\Question;
 use App\Entity\Questionnaire;
 use App\Entity\Reponse;
+use App\Repository\QuestionRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -19,7 +20,8 @@ class QuestionController extends AbstractController
 {
     public function __construct(
         private EntityManagerInterface $entityManager,
-        private ValidatorInterface $validator
+        private ValidatorInterface $validator,
+        private QuestionRepository $questionRepository
     ) {
     }
 
@@ -117,32 +119,13 @@ class QuestionController extends AbstractController
         if (isset($data['numeroOrdre'])) {
             $question->setNumeroOrdre($data['numeroOrdre']);
         } else {
-
-
-            $maxOrder = $this->entityManager->getRepository(Question::class)
-                ->createQueryBuilder('q')
-                ->select('MAX(q.numeroOrdre)')
-                ->where('q.questionnaire = :questionnaire')
-                ->setParameter('questionnaire', $questionnaire)
-                ->getQuery()
-                ->getSingleScalarResult();
-
+            $maxOrder = $this->questionRepository->findMaxOrderByQuestionnaire($questionnaire);
             $question->setNumeroOrdre(($maxOrder ?? 0) + 1);
-        }
-
-        // Validation
-        $errors = $this->validator->validate($question);
-        if (count($errors) > 0) {
-            $errorMessages = [];
-            foreach ($errors as $error) {
-                $errorMessages[] = $error->getMessage();
-            }
-            return new JsonResponse(['errors' => $errorMessages], Response::HTTP_BAD_REQUEST);
         }
 
         $this->entityManager->persist($question);
 
-
+        // Ajouter les réponses AVANT la validation
         if (isset($data['reponses']) && is_array($data['reponses'])) {
             foreach ($data['reponses'] as $reponseData) {
                 $reponse = new Reponse();
@@ -162,6 +145,16 @@ class QuestionController extends AbstractController
 
                 $question->addReponse($reponse);
             }
+        }
+
+        // Validation APRÈS avoir ajouté les réponses
+        $errors = $this->validator->validate($question);
+        if (count($errors) > 0) {
+            $errorMessages = [];
+            foreach ($errors as $error) {
+                $errorMessages[] = $error->getMessage();
+            }
+            return new JsonResponse(['errors' => $errorMessages], Response::HTTP_BAD_REQUEST);
         }
 
         $this->entityManager->flush();
@@ -277,6 +270,8 @@ class QuestionController extends AbstractController
             'id' => $question->getId(),
             'texte' => $question->getTexte(),
             'numeroOrdre' => $question->getNumeroOrdre(),
+            'type' => $question->getQuestionType(),
+            'isMultipleChoice' => $question->isMultipleChoice(),
             'questionnaire' => [
                 'id' => $question->getQuestionnaire()->getId(),
                 'titre' => $question->getQuestionnaire()->getTitre()

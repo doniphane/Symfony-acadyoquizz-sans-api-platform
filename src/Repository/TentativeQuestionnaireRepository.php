@@ -82,4 +82,51 @@ class TentativeQuestionnaireRepository extends ServiceEntityRepository
             ->getQuery()
             ->getResult();
     }
+
+    public function findWithFiltersAndUser(?int $questionnaireId = null, $user = null, bool $isAdmin = false): array
+    {
+        $queryBuilder = $this->createQueryBuilder('t')
+            ->leftJoin('t.questionnaire', 'q')
+            ->leftJoin('t.utilisateur', 'u');
+
+        if ($questionnaireId) {
+            $queryBuilder->where('q.id = :questionnaireId')
+                ->setParameter('questionnaireId', $questionnaireId);
+        }
+
+        if (!$isAdmin && $user) {
+            $queryBuilder->andWhere('q.creePar = :user')
+                ->setParameter('user', $user);
+        }
+
+        return $queryBuilder->getQuery()->getResult();
+    }
+
+    /**
+     * Trouve les tentatives d'un utilisateur avec les détails du questionnaire
+     */
+    public function findByUserWithQuestionnaire($user): array
+    {
+        return $this->createQueryBuilder('t')
+            ->leftJoin('t.questionnaire', 'q')
+            ->where('t.utilisateur = :user')
+            ->setParameter('user', $user)
+            ->orderBy('t.dateDebut', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Trouve une tentative avec vérification d'appartenance à l'utilisateur
+     */
+    public function findOneByIdAndUser(int $id, $user): ?TentativeQuestionnaire
+    {
+        return $this->createQueryBuilder('t')
+            ->where('t.id = :id')
+            ->andWhere('t.utilisateur = :user')
+            ->setParameter('id', $id)
+            ->setParameter('user', $user)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
 }
