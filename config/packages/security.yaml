@@ -42,7 +42,14 @@ security:
         - { path: ^/api/logout, roles: PUBLIC_ACCESS }
         - { path: ^/api/users/register, roles: PUBLIC_ACCESS }
         - { path: ^/api/docs, roles: PUBLIC_ACCESS }
-        - { path: ^/api/public, roles: PUBLIC_ACCESS }
+        - { path: ^/api/debug, roles: ROLE_USER }
+        # Routes publiques pour consultation uniquement (pas pour passer les quiz)
+        - { path: ^/api/public/questionnaires$, roles: PUBLIC_ACCESS, methods: [GET] }
+        - { path: ^/api/public/questionnaires/\d+$, roles: PUBLIC_ACCESS, methods: [GET] }
+        - { path: ^/api/public/questionnaires/code/, roles: PUBLIC_ACCESS, methods: [GET] }
+        # Forcer l'authentification pour passer les quiz
+        - { path: ^/api/public/questionnaires/.+/submit, roles: ROLE_USER }
+        - { path: ^/api/public/tentative, roles: ROLE_USER }
         - { path: ^/api/users/me, roles: ROLE_USER }
         - { path: ^/api/users, roles: ROLE_USER }
         - { path: ^/api, roles: ROLE_USER }
