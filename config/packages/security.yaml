@@ -41,6 +41,8 @@ security:
         - { path: ^/api/login_check, roles: PUBLIC_ACCESS }
         - { path: ^/api/logout, roles: PUBLIC_ACCESS }
         - { path: ^/api/users/register, roles: PUBLIC_ACCESS }
+        - { path: ^/api/mail/forgot-password, roles: PUBLIC_ACCESS }
+        - { path: ^/api/mail/reset-password, roles: PUBLIC_ACCESS }
         - { path: ^/api/docs, roles: PUBLIC_ACCESS }
         - { path: ^/api/debug, roles: ROLE_USER }
         # Routes publiques pour consultation uniquement (pas pour passer les quiz)

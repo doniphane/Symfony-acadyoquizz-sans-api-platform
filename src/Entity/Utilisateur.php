@@ -89,6 +89,12 @@ class Utilisateur implements UserInterface, PasswordAuthenticatedUserInterface, 
     )]
     private ?string $lastName = null;
 
+    #[ORM\Column(length: 255, nullable: true)]
+    private ?string $resetToken = null;
+
+    #[ORM\Column(type: 'datetime', nullable: true)]
+    private ?\DateTime $resetTokenExpiresAt = null;
+
     #[ORM\OneToMany(mappedBy: 'utilisateur', targetEntity: TentativeQuestionnaire::class, orphanRemoval: true)]
     private Collection $tentativesQuestionnaire;
 
@@ -280,5 +286,29 @@ class Utilisateur implements UserInterface, PasswordAuthenticatedUserInterface, 
     public function isAdmin(): bool
     {
         return in_array('ROLE_ADMIN', $this->getRoles());
+    }
+
+    public function getResetToken(): ?string
+    {
+        return $this->resetToken;
+    }
+
+    public function setResetToken(?string $resetToken): static
+    {
+        $this->resetToken = $resetToken;
+
+        return $this;
+    }
+
+    public function getResetTokenExpiresAt(): ?\DateTime
+    {
+        return $this->resetTokenExpiresAt;
+    }
+
+    public function setResetTokenExpiresAt(?\DateTime $resetTokenExpiresAt): static
+    {
+        $this->resetTokenExpiresAt = $resetTokenExpiresAt;
+
+        return $this;
     }
 }
