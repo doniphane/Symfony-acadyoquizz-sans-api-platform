@@ -30,4 +30,18 @@ class QuestionRepository extends ServiceEntityRepository
 
         return $result ? (int) $result : null;
     }
+
+    /**
+     * Trouve une question spécifique dans un questionnaire spécifique
+     */
+    public function findQuestionInQuestionnaire(int $questionId, int $questionnaireId): ?Question
+    {
+        return $this->createQueryBuilder('q')
+            ->where('q.id = :questionId')
+            ->andWhere('q.questionnaire = :questionnaireId')
+            ->setParameter('questionId', $questionId)
+            ->setParameter('questionnaireId', $questionnaireId)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
 }

@@ -83,4 +83,64 @@ class QuestionnaireRepository extends ServiceEntityRepository
             ->getQuery()
             ->getResult();
     }
+
+    /**
+     * Trouve les questionnaires créés par un utilisateur
+     */
+    public function findByCreator($user): array
+    {
+        return $this->findBy(['creePar' => $user], ['dateCreation' => 'DESC']);
+    }
+
+    /**
+     * Trouve un questionnaire spécifique appartenant à un créateur
+     */
+    public function findOneByIdAndCreator(int $id, $user): ?Questionnaire
+    {
+        return $this->createQueryBuilder('q')
+            ->where('q.id = :id')
+            ->andWhere('q.creePar = :user')
+            ->setParameter('id', $id)
+            ->setParameter('user', $user)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
+    /**
+     * Trouve tous les questionnaires actifs disponibles pour jouer
+     */
+    public function findActiveQuizzes(): array
+    {
+        return $this->createQueryBuilder('q')
+            ->where('q.estActif = true')
+            ->orderBy('q.dateCreation', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * Trouve un questionnaire actif par ID
+     */
+    public function findActiveQuizById(int $id): ?Questionnaire
+    {
+        return $this->createQueryBuilder('q')
+            ->where('q.id = :id')
+            ->andWhere('q.estActif = true')
+            ->setParameter('id', $id)
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
+
+    /**
+     * Trouve un questionnaire actif par code d'accès
+     */
+    public function findActiveQuizByCode(string $code): ?Questionnaire
+    {
+        return $this->createQueryBuilder('q')
+            ->where('q.codeAcces = :code')
+            ->andWhere('q.estActif = true')
+            ->setParameter('code', strtoupper($code))
+            ->getQuery()
+            ->getOneOrNullResult();
+    }
 }
